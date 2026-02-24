@@ -1,0 +1,24 @@
+[project]
+name = "knee-landmarks-xray"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10.6"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "monai>=1.5.2",
+    "numpy>=2.2.6",
+    "opencv-python>=4.13.0.92",
+    "pandas>=2.3.3",
+    "pillow>=12.1.0",
+    "py-pde>=0.38",
+    "pydicom>=3.0.1",
+    "pylibjpeg>=2.1.0",
+    "pylibjpeg-libjpeg>=2.3.0",
+    "pylibjpeg-openjpeg>=2.5.0",
+    "scikit-fmm>=2025.6.23",
+    "scikit-image>=0.25.2",
+    "scikit-learn>=1.7.2",
+    "scipy>=1.15.3",
+    "torch>=2.10.0",
+]
