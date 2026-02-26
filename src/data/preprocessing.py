@@ -3,7 +3,7 @@ import cv2 as cv
 
 
 def clip_img(
-    img: np.ndarray, lower_centile=1, upper_centile=99
+    img: np.ndarray, lower_centile: int = 1, upper_centile: int = 99
 ) -> tuple[np.ndarray, float, float]:
 
     lower_val, upper_val = np.percentile(img, [lower_centile, upper_centile])
@@ -40,7 +40,10 @@ def zscore_normalize(img: np.ndarray) -> np.ndarray:
 
 
 def burned_text_removal(
-    float_img: np.ndarray, max_area_ratio=0.01, min_area_ratio=1e-5, dilation_iter=1
+    float_img: np.ndarray,
+    max_area_ratio: float = 0.01,
+    min_area_ratio: float = 1e-5,
+    dilation_iter: int = 1,
 ) -> np.ndarray:
 
     # image normalization
@@ -105,11 +108,21 @@ def crop_border(img: np.ndarray, margin: int = 10) -> tuple[np.ndarray, dict]:
     return cropped, metadata
 
 
+def invert_img(img: np.ndarray) -> np.ndarray:
+    return img.max() - img
+
+
+# def invert_monochrome1(dcm_img):
+#     return
+
+
 class ResizeTransform:
-    def __init__(self, target_size=512):
+    def __init__(self, target_size: int = 512):
         self.target_size = target_size
 
-    def forward(self, img, padding_constant=0):
+    def forward(
+        self, img: np.ndarray, padding_constant: int = 0
+    ) -> tuple[np.ndarray, dict]:
         h, w = img.shape
 
         scale = self.target_size / max(h, w)
@@ -149,7 +162,7 @@ class ResizeTransform:
 
         return padded, metadata
 
-    def reverse(self, img, metadata):
+    def reverse(self, img: np.ndarray, metadata: dict) -> np.ndarray:
         # return to original
 
         h, w = img.shape
