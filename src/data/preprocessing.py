@@ -162,6 +162,26 @@ class ResizeTransform:
 
         return padded, metadata
 
+    def forward_mask(
+        self, img: np.ndarray, metadata: dict, padding_constant: int = 0
+    ) -> np.ndarray:
+
+        resized_img = cv.resize(
+            img, (metadata["new_w"], metadata["new_h"]), interpolation=cv.INTER_LINEAR
+        )
+
+        padded = np.pad(
+            resized_img,
+            (
+                (metadata["pad_top"], metadata["pad_bottom"]),
+                (metadata["pad_left"], metadata["pad_right"]),
+            ),
+            mode="constant",
+            constant_values=padding_constant,
+        )
+
+        return padded
+
     def reverse(self, img: np.ndarray, metadata: dict) -> np.ndarray:
         # return to original
 
