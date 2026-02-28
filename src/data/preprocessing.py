@@ -87,9 +87,7 @@ def burned_text_removal(
     # masking
     mask_bool = (text_mask > 0).astype(np.uint8)
 
-    cleaned_float = img.copy()
-
-    cleaned_float = cv.inpaint(cleaned_float, mask_bool, 5, cv.INPAINT_TELEA)
+    cleaned_float = cv.inpaint(img, mask_bool, 5, cv.INPAINT_TELEA)
 
     return cleaned_float
 
@@ -97,7 +95,8 @@ def burned_text_removal(
 def crop_border(img: np.ndarray, margin: int = 10) -> tuple[np.ndarray, dict]:
 
     if margin == 0:
-        return img
+        metadata = {"crop_margin": 0, "orig_h": img.shape[0], "orig_w": img.shape[1]}
+        return img, metadata
 
     h, w = img.shape
 
@@ -110,10 +109,6 @@ def crop_border(img: np.ndarray, margin: int = 10) -> tuple[np.ndarray, dict]:
 
 def invert_img(img: np.ndarray) -> np.ndarray:
     return img.max() - img
-
-
-# def invert_monochrome1(dcm_img):
-#     return
 
 
 class ResizeTransform:
@@ -167,7 +162,7 @@ class ResizeTransform:
     ) -> np.ndarray:
 
         resized_img = cv.resize(
-            img, (metadata["new_w"], metadata["new_h"]), interpolation=cv.INTER_LINEAR
+            img, (metadata["new_w"], metadata["new_h"]), interpolation=cv.INTER_NEAREST
         )
 
         padded = np.pad(
