@@ -25,3 +25,11 @@ dependencies = [
     "torchvision>=0.25.0",
     "tqdm>=4.67.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

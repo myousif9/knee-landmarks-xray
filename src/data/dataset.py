@@ -4,7 +4,7 @@ import pydicom
 import SimpleITK as sitk
 import numpy as np
 import os
-from preprocessing import (
+from .preprocessing import (
     invert_img,
     burned_text_removal,
     clip_img,
@@ -83,7 +83,9 @@ class KneeDataset(Dataset):
         # 7. Load, resize and pad mask
         if self.mask_paths is not None:
             mask_nrrd = sitk.ReadImage(self.mask_paths[index])
-            mask = sitk.GetArrayFromImage(mask_nrrd).astype(np.float32)
+            mask = (sitk.GetArrayFromImage(mask_nrrd).squeeze(0) == 1).astype(
+                np.float32
+            )
 
             mask = self.resize.forward_mask(mask, metadata)
 
