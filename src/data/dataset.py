@@ -18,12 +18,14 @@ class KneeDataset(Dataset):
         self,
         image_paths,
         mask_paths=None,
+        laterality=None,  # list of "L"/"R", one label per image
         cache_dir: str = None,
         target_size: int = 512,
     ):
 
         self.image_paths = image_paths
         self.mask_paths = mask_paths
+        self.laterality = laterality
         self.resize = ResizeTransform(target_size)
 
         self.cache_dir = cache_dir
@@ -39,6 +41,10 @@ class KneeDataset(Dataset):
         return os.path.join(self.cache_dir, f"{stem}.npz")
 
     def __getitem__(self, index):
+        flipped = (
+            self.laterality is not None
+            and self.laterality[index].strip().upper() == "R"
+        )
 
         # 0. Loading cached image and mask and making them tensors
         if self.cache_dir is not None:
@@ -55,7 +61,7 @@ class KneeDataset(Dataset):
                     else None
                 )
 
-                return tensor_img, tensor_mask
+                return tensor_img, tensor_mask, flipped
 
         # 1. Load dicom image
         ds = pydicom.dcmread(self.image_paths[index])
@@ -64,6 +70,9 @@ class KneeDataset(Dataset):
         # Fix Monochrome 1 (invert image)
         if ds.PhotometricInterpretation.lower() == "monochrome1":
             img = invert_img(img)
+
+        if flipped:
+            img = np.fliplr(img)
 
         # 2. Remove burned in text
         img = burned_text_removal(img)
@@ -87,6 +96,9 @@ class KneeDataset(Dataset):
                 np.float32
             )
 
+            if flipped:
+                mask = np.fliplr(mask)
+
             mask = self.resize.forward_mask(mask, metadata)
 
             tensor_mask = torch.from_numpy(mask).unsqueeze(0).float()
@@ -99,4 +111,4 @@ class KneeDataset(Dataset):
             else:
                 np.savez(self._cache_path(index), img=img)
 
-        return tensor_img, tensor_mask
+        return tensor_img, tensor_mask, flipped
