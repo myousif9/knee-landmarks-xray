@@ -210,3 +210,4 @@ test_segmentation_label/
 figures/
 
 .DS_Store
+/data/
