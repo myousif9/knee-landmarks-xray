@@ -66,7 +66,6 @@ train_aug = A.Compose(
         A.ElasticTransform(alpha=120, sigma=6, p=0.3),
         A.RandomBrightnessContrast(p=0.3),
         A.GaussianBlur(p=0.2),
-        A.GaussNoise(std_range=(0.1, 0.2), p=0.2),
     ]
 )
 
