@@ -31,7 +31,7 @@ if ON_COLAB:
         "/content/drive/MyDrive/projects/knee-landmarks-xray/cache/segmentations"
     )
     CHECKPOINT_DIR = (
-        "/content/drive/MyDrive/projects/knee-landmarks-xray/cache/segmentation"
+        "/content/drive/MyDrive/projects/knee-landmarks-xray/checkpoints/segmentations"
     )
 else:
     MRKR_DATA_PATH = "../../../../../Volumes/HDD_02/datasets/emory_mrkr"
