@@ -26,9 +26,13 @@ NUM_WORKERS = 0 if ON_COLAB is False and torch.backends.mps.is_available() else 
 LR = 0.001
 
 if ON_COLAB:
-    MRKR_DATA_PATH = "/content/drive/MyDrive/knee-landmarks-xray"
-    CACHE_DIR = "/content/drive/MyDrive/knee-landmarks-xray/cache/segmentations"
-    CHECKPOINT_DIR = "/content/drive/MyDrive/knee-landmarks-xray/cache/segmentation"
+    MRKR_DATA_PATH = "/content/drive/MyDrive/projects/knee-landmarks-xray"
+    CACHE_DIR = (
+        "/content/drive/MyDrive/projects/knee-landmarks-xray/cache/segmentations"
+    )
+    CHECKPOINT_DIR = (
+        "/content/drive/MyDrive/projects/knee-landmarks-xray/cache/segmentation"
+    )
 else:
     MRKR_DATA_PATH = "../../../../../Volumes/HDD_02/datasets/emory_mrkr"
     CACHE_DIR = "cache/segmentations"
