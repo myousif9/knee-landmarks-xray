@@ -38,7 +38,7 @@ else:
 # Load CSV, filter to is_segmented == True
 lateral_path = os.path.join(MRKR_DATA_PATH, "tables", "MRKR_lateral_image_metadata.csv")
 lateral_df = pd.read_csv(lateral_path)
-segmented_df = lateral_df[lateral_df["is_segmented"] == True].reset_index(drop=True)
+segmented_df = lateral_df[lateral_df["is_segmented"]].reset_index(drop=True)
 
 # Build image_paths, mask_paths, laterality lists
 image_paths = [
@@ -172,4 +172,4 @@ for epoch in range(EPOCHS):
             },
             os.path.join(CHECKPOINT_DIR, f"{MODEL_NAME}_best.pt"),
         )
-        print(f" -> saved checkpoint")
+        print(" -> saved checkpoint")
