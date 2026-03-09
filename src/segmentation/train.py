@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 import segmentation_models_pytorch as smp
-from monai.losses import DiceBCELoss
+from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric
 from src.data.dataset import KneeDataset
 from tqdm import tqdm
@@ -117,7 +117,7 @@ def build_model(model_name: str) -> torch.nn.Module:
 model = build_model(MODEL_NAME).to(device=DEVICE)
 
 # loss/criterion
-criterion = DiceBCELoss(sigmoid=True)
+criterion = DiceCELoss(sigmoid=True)
 dice_metric = DiceMetric(include_background=False, reduction="mean")
 
 # Optimizer
