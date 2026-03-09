@@ -19,6 +19,7 @@ class KneeDataset(Dataset):
         image_paths,
         mask_paths=None,
         laterality=None,  # list of "L"/"R", one label per image
+        transform=None,
         cache_dir: str = None,
         target_size: int = 512,
     ):
@@ -27,7 +28,7 @@ class KneeDataset(Dataset):
         self.mask_paths = mask_paths
         self.laterality = laterality
         self.resize = ResizeTransform(target_size)
-
+        self.transform = transform
         self.cache_dir = cache_dir
 
         if cache_dir is not None:
@@ -54,6 +55,12 @@ class KneeDataset(Dataset):
                     img = data["img"].copy()
                     mask = data["mask"].copy() if "mask" in data else None
 
+                # 1. Augmentations
+                if self.transform is not None and mask is not None:
+                    augmented = self.transform(image=img, mask=mask)
+                    img, mask = augmented["image"], augmented["mask"]
+
+                # 2. Convert to tensor
                 tensor_img = torch.from_numpy(img).unsqueeze(0).float()
                 tensor_mask = (
                     torch.from_numpy(mask).unsqueeze(0).float()
@@ -86,9 +93,6 @@ class KneeDataset(Dataset):
         # 5. Resize and pad
         img, metadata = self.resize.forward(img)
 
-        # 6. Convert img to tensor
-        tensor_img = torch.from_numpy(img).unsqueeze(0).float()
-
         # 7. Load, resize and pad mask
         if self.mask_paths is not None:
             mask_nrrd = sitk.ReadImage(self.mask_paths[index])
@@ -101,14 +105,23 @@ class KneeDataset(Dataset):
 
             mask = self.resize.forward_mask(mask, metadata)
 
-            tensor_mask = torch.from_numpy(mask).unsqueeze(0).float()
-        else:
-            tensor_mask = None
-
         if self.cache_dir is not None:
             if self.mask_paths is not None:
                 np.savez(self._cache_path(index), img=img, mask=mask)
             else:
                 np.savez(self._cache_path(index), img=img)
+
+        # Augmentations
+        if self.transform is not None and self.mask_paths is not None:
+            augmented = self.transform(image=img, mask=mask)
+            img, mask = augmented["image"], augmented["mask"]
+
+        tensor_mask = (
+            torch.from_numpy(mask).unsqueeze(0).float()
+            if self.mask_paths is not None
+            else None
+        )
+
+        tensor_img = torch.from_numpy(img).unsqueeze(0).float()
 
         return tensor_img, tensor_mask, flipped

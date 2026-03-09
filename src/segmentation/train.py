@@ -1,11 +1,14 @@
 import os
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
+from sklearn.model_selection import train_test_split
 import segmentation_models_pytorch as smp
 from monai.losses import DiceBCELoss
 from monai.metrics import DiceMetric
 from src.data.dataset import KneeDataset
+from tqdm import tqdm
+import albumentations as A
 
 DEVICE = (
     "cuda"
@@ -14,8 +17,10 @@ DEVICE = (
 )
 ON_COLAB = "COLAB_GPU" in os.environ
 
-EPOCHS = 50
-BATCH_SIZE = 4
+MODEL_NAME = "unet_resnet34"
+
+EPOCHS = 200
+BATCH_SIZE = 16 if ON_COLAB else 4
 NUM_WORKERS = 0 if ON_COLAB is False and torch.backends.mps.is_available() else 2
 
 LR = 0.001
@@ -43,33 +48,73 @@ image_paths = [
 mask_paths = segmented_df["mask_path"].tolist()
 laterality = segmented_df["laterality"].tolist()
 
+
+# Split train/val indicies
+train_idx, val_idx = train_test_split(
+    range(len(image_paths)), test_size=0.2, random_state=42
+)
+
+
+# dataset augmentations
+train_aug = A.Compose(
+    [
+        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.1, rotate_limit=15, p=0.5),
+        A.ElasticTransform(alpha=120, sigma=6, p=0.3),
+        A.RandomBrightnessContrast(p=0.3),
+        A.GaussianBlur(p=0.2),
+        A.GaussNoise(std_range=(0.1, 0.2), p=0.2),
+    ]
+)
+
 # Create KneeDataset
-ds = KneeDataset(
-    image_paths=image_paths,
-    mask_paths=mask_paths,
-    laterality=laterality,
+train_ds = KneeDataset(
+    image_paths=[image_paths[i] for i in train_idx],
+    mask_paths=[mask_paths[i] for i in train_idx],
+    laterality=[laterality[i] for i in train_idx],
+    transform=train_aug,
     cache_dir=CACHE_DIR,
     target_size=512,
 )
 
-# Split train/val
-generator1 = torch.Generator().manual_seed(42)
-train, validate = random_split(ds, [0.8, 0.2], generator=generator1)
+val_ds = KneeDataset(
+    image_paths=[image_paths[i] for i in val_idx],
+    mask_paths=[mask_paths[i] for i in val_idx],
+    laterality=[laterality[i] for i in val_idx],
+    cache_dir=CACHE_DIR,
+    target_size=512,
+)
 
 # Create DataLoader
 
 train_loader = DataLoader(
-    train, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+    train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
 )
 val_loader = DataLoader(
-    validate, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+    val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
 )
 
-# model
 
-model = smp.Unet(
-    encoder_name="resnet34", encoder_weights="imagenet", in_channels=1, classes=1
-).to(device=DEVICE)
+# model
+def build_model(model_name: str) -> torch.nn.Module:
+    if model_name == "unet_resnet34":
+        return smp.Unet(
+            encoder_name="resnet34",
+            encoder_weights="imagenet",
+            in_channels=1,
+            classes=1,
+        )
+    elif model_name == "unet_resnet50":
+        return smp.Unet(
+            encoder_name="resnet50",
+            encoder_weights="imagenet",
+            in_channels=1,
+            classes=1,
+        )
+    else:
+        raise ValueError(f"Unknown model {model_name}")
+
+
+model = build_model(MODEL_NAME).to(device=DEVICE)
 
 # loss/criterion
 criterion = DiceBCELoss(sigmoid=True)
@@ -86,7 +131,7 @@ for epoch in range(EPOCHS):
 
     train_loss = 0.0
 
-    for imgs, masks, _ in train_loader:
+    for imgs, masks, _ in tqdm(train_loader, "train"):
         imgs, masks = imgs.to(DEVICE), masks.to(DEVICE)
 
         ypred = model(imgs)
@@ -103,7 +148,7 @@ for epoch in range(EPOCHS):
 
     model.eval()
     with torch.no_grad():
-        for imgs, masks, _ in val_loader:
+        for imgs, masks, _ in tqdm(val_loader, desc="val"):
             imgs, masks = imgs.to(DEVICE), masks.to(DEVICE)
 
             ypred = model(imgs)
@@ -118,5 +163,13 @@ for epoch in range(EPOCHS):
     if val_dice > best_val_dice:
         best_val_dice = val_dice
         os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-        torch.save(model.state_dict(), os.path.join(CHECKPOINT_DIR, "best.pt"))
+        torch.save(
+            {
+                "model_state": model.state_dict(),
+                "model_name": MODEL_NAME,
+                "epoch": epoch,
+                "val_dice": val_dice,
+            },
+            os.path.join(CHECKPOINT_DIR, f"{MODEL_NAME}_best.pt"),
+        )
         print(f" -> saved checkpoint")
