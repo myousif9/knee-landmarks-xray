@@ -18,6 +18,7 @@ DEVICE = (
 ON_COLAB = "COLAB_GPU" in os.environ
 
 MODEL_NAME = "unet_resnet34"
+VERSION = "v2"
 
 EPOCHS = 200
 BATCH_SIZE = 16 if ON_COLAB else 4
@@ -173,6 +174,6 @@ for epoch in range(EPOCHS):
                 "epoch": epoch,
                 "val_dice": val_dice,
             },
-            os.path.join(CHECKPOINT_DIR, f"{MODEL_NAME}_best.pt"),
+            os.path.join(CHECKPOINT_DIR, f"{MODEL_NAME}_{VERSION}_best.pt"),
         )
         print(" -> saved checkpoint")

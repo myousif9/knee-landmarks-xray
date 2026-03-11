@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import segmentation_models_pytorch as smp
 import torch
+from scipy import ndimage
 from tqdm import tqdm
 
 import argparse
@@ -97,20 +98,45 @@ def run_inference(model: torch.nn.Module, img: torch.Tensor, device: str) -> np.
 
 
 # Reverse resize back to original dimensions
-def postprocess(mask: np.uint8, metadata: dict, flipped: bool) -> np.ndarray:
+def postprocess(
+    mask: np.uint8,
+    metadata: dict,
+    flipped: bool,
+    smooth: bool = False,
+) -> np.ndarray:
+
     resize = ResizeTransform()
     mask = resize.reverse(mask.astype(np.float32), metadata)
     if flipped:
         mask = np.fliplr(mask)
 
-    return (mask > 0.5).astype(np.uint8)
+    binary = (mask > 0.5).astype(np.uint8)
+
+    # keep largest connected component
+    if smooth:
+        labeled, num_features = ndimage.label(binary)
+        if num_features > 1:
+            sizes = ndimage.sum(binary, labeled, range(1, num_features + 1))
+            binary = (labeled == np.argmax(sizes) + 1).astype(np.uint8)
+
+        binary = ndimage.binary_fill_holes(binary).astype(np.uint8)
+        binary = ndimage.binary_closing(binary, iterations=2).astype(np.uint8)
+
+    return binary
 
 
 # Save segmentation to output dir as .nrrd
-def save_nrrd(mask: np.uint8, out_path: str):
+def save_nrrd(mask: np.uint8, dcm_path: str, out_path: str):
 
     mask_3d = mask[np.newaxis, ...]
     sitk_img = sitk.GetImageFromArray(mask_3d)
+
+    dcm_img = sitk.ReadImage(dcm_path)
+
+    sitk_img.SetSpacing(dcm_img.GetSpacing())
+    sitk_img.SetOrigin(dcm_img.GetOrigin())
+    sitk_img.SetDirection(dcm_img.GetDirection())
+
     sitk.WriteImage(sitk_img, out_path)
 
 
@@ -119,11 +145,12 @@ def predict(
     dcm_path: str,
     laterality: str,
     device: str,
+    smooth: bool = False,
 ) -> np.ndarray:
     img, metadata, flipped = preprocess(dcm_path, laterality)
     mask = run_inference(model, img, device)
 
-    return postprocess(mask, metadata, flipped)
+    return postprocess(mask, metadata, flipped, smooth=smooth)
 
 
 def predict_batch(
@@ -131,6 +158,7 @@ def predict_batch(
     csv_path: str,
     data_dir: str,
     output_dir: str,
+    smooth: bool = False,
     device: str = None,
 ):
     if device is None:
@@ -146,9 +174,9 @@ def predict_batch(
 
     for _, row in tqdm(df.iterrows(), total=len(df)):
         dcm_path = os.path.join(data_dir, row["dicom_path"])
-        mask = predict(model, dcm_path, row["laterality"], device)
+        mask = predict(model, dcm_path, row["laterality"], device, smooth=smooth)
         stem = os.path.splitext(os.path.basename(dcm_path))[0]
-        save_nrrd(mask, os.path.join(output_dir, f"{stem}.nrrd"))
+        save_nrrd(mask, dcm_path, os.path.join(output_dir, f"{stem}.nrrd"))
         shutil.copy(dcm_path, os.path.join(output_dir, os.path.basename(dcm_path)))
 
 
@@ -159,11 +187,17 @@ def main():
     parser.add_argument("--data_dir", required=True)
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--device", default=None)
+    parser.add_argument("--smooth", action="store_true", default=False)
 
     args = parser.parse_args()
 
     predict_batch(
-        args.checkpoint, args.csv, args.data_dir, args.output_dir, device=args.device
+        args.checkpoint,
+        args.csv,
+        args.data_dir,
+        args.output_dir,
+        device=args.device,
+        smooth=args.smooth,
     )
 
 

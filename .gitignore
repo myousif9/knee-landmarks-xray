@@ -210,5 +210,6 @@ test_segmentation_label/
 figures/
 
 .DS_Store
+experiments/
 /data/
 cache/
