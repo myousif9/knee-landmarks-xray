@@ -136,7 +136,9 @@ def train(
 
     # Optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="max", patience=10, factor=0.5
+    )
     scaler = GradScaler()
 
     best_val_dice = 0.0
@@ -163,8 +165,6 @@ def train(
             scaler.update()
             train_loss += loss.item()
 
-        scheduler.step()
-
         print(f" train_loss: {train_loss / len(train_loader):.4f}")
         writer.add_scalar("Loss/train", train_loss / len(train_loader), epoch)
 
@@ -179,6 +179,8 @@ def train(
 
         val_dice = dice_metric.aggregate().item()
         dice_metric.reset()
+
+        scheduler.step(val_dice)
 
         print(f" val_dice: {val_dice:.4f}")
         writer.add_scalar("Dice/val", val_dice, epoch)
