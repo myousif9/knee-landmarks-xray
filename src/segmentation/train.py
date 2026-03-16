@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split
@@ -15,23 +16,35 @@ import argparse
 
 
 # model
-def build_model(model_name: str) -> torch.nn.Module:
-    if model_name == "unet_resnet34":
-        return smp.Unet(
-            encoder_name="resnet34",
-            encoder_weights="imagenet",
-            in_channels=1,
-            classes=1,
-        )
-    elif model_name == "unet_resnet50":
-        return smp.Unet(
-            encoder_name="resnet50",
-            encoder_weights="imagenet",
-            in_channels=1,
-            classes=1,
-        )
+def build_model(model_name: str, architecture: str = "unet") -> torch.nn.Module:
+
+    encoders = {"unet_resnet34": "resnet34", "unet_resnet50": "resnet50"}
+
+    if model_name not in encoders:
+        raise ValueError(f"Unknown model_name {model_name}")
+
+    encoder = encoders[model_name]
+    kwargs = dict(
+        encoder_name=encoder, encoder_weights="imagenet", in_channels=1, classes=1
+    )
+
+    if architecture == "unet":
+        return smp.Unet(**kwargs)
+    elif architecture == "unet++":
+        return smp.UnetPlusPlus(**kwargs)
     else:
-        raise ValueError(f"Unknown model {model_name}")
+        raise ValueError(f"Unknown architecture {architecture}")
+
+
+def boundary_loss(pred, target):
+
+    laplacian = (
+        torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32)
+        .view(1, 1, 3, 3)
+        .to(pred.device)
+    )
+    boundary = F.conv2d(target.float(), laplacian, padding=1).abs().clamp(0, 1)
+    return F.binary_cross_entropy_with_logits(pred, boundary)
 
 
 def train(
@@ -39,10 +52,12 @@ def train(
     cache_dir: str,
     checkpoint_dir: str,
     model_name: str = "unet_resnet34",
+    architecture: str = "unet",
     version: str = "v1",
     epochs: int = 200,
     batch_size: int = 16,
     lr: float = 0.001,
+    boundary_loss_weight: float = 0.0,
 ):
 
     writer = SummaryWriter(log_dir=os.path.join(checkpoint_dir, "logs"))
@@ -112,14 +127,15 @@ def train(
         val_ds, batch_size=batch_size, shuffle=False, num_workers=NUM_WORKERS
     )
 
-    model = build_model(model_name).to(device=DEVICE)
+    model = build_model(model_name, architecture=architecture).to(device=DEVICE)
 
     # loss/criterion
     criterion = DiceCELoss(sigmoid=True)
     dice_metric = DiceMetric(include_background=False, reduction="mean")
 
     # Optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     best_val_dice = 0.0
 
@@ -132,15 +148,20 @@ def train(
         for imgs, masks, _ in tqdm(train_loader, "train"):
             imgs, masks = imgs.to(DEVICE), masks.to(DEVICE)
 
-            ypred = model(imgs)
-            loss = criterion(ypred, masks)
-
             optimizer.zero_grad()
+            ypred = model(imgs)
+
+            loss = criterion(ypred, masks)
+            if boundary_loss_weight > 0.0:
+                loss = loss + boundary_loss_weight * boundary_loss(ypred, masks)
+
             loss.backward()
 
             train_loss += loss.item()
 
             optimizer.step()
+
+        scheduler.step()
 
         print(f" train_loss: {train_loss / len(train_loader):.4f}")
         writer.add_scalar("Loss/train", train_loss / len(train_loader), epoch)
@@ -182,11 +203,13 @@ def main():
     parser.add_argument("--data_path", required=True)
     parser.add_argument("--cache_dir", required=True)
     parser.add_argument("--checkpoint_dir", required=True)
+    parser.add_argument("--architecture", default="unet")
     parser.add_argument("--model_name", default="unet_resnet34")
     parser.add_argument("--version", default="v1")
     parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--boundary_loss_weight", type=float, default=0.0)
     args = parser.parse_args()
 
     train(**vars(args))
