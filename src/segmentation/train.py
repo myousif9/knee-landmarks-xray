@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split
@@ -136,6 +137,7 @@ def train(
     # Optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    scaler = GradScaler()
 
     best_val_dice = 0.0
 
@@ -149,17 +151,17 @@ def train(
             imgs, masks = imgs.to(DEVICE), masks.to(DEVICE)
 
             optimizer.zero_grad()
-            ypred = model(imgs)
+            with autocast(device_type=DEVICE):
+                ypred = model(imgs)
 
-            loss = criterion(ypred, masks)
-            if boundary_loss_weight > 0.0:
-                loss = loss + boundary_loss_weight * boundary_loss(ypred, masks)
+                loss = criterion(ypred, masks)
+                if boundary_loss_weight > 0.0:
+                    loss = loss + boundary_loss_weight * boundary_loss(ypred, masks)
 
-            loss.backward()
-
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             train_loss += loss.item()
-
-            optimizer.step()
 
         scheduler.step()
 
