@@ -59,6 +59,7 @@ def train(
     batch_size: int = 16,
     lr: float = 0.001,
     boundary_loss_weight: float = 0.0,
+    early_stopping_patience: int = 20,
 ):
 
     writer = SummaryWriter(log_dir=os.path.join(checkpoint_dir, "logs"))
@@ -187,6 +188,7 @@ def train(
 
         if val_dice > best_val_dice:
             best_val_dice = val_dice
+            early_stopping_counter = 0
             os.makedirs(checkpoint_dir, exist_ok=True)
             torch.save(
                 {
@@ -198,6 +200,11 @@ def train(
                 os.path.join(checkpoint_dir, f"{model_name}_{version}_best.pt"),
             )
             print(" -> saved checkpoint")
+        else:
+            early_stopping_counter += 1
+            if early_stopping_counter >= early_stopping_patience:
+                print(f"Early stoppping at epoch {epoch + 1}")
+                break
 
     writer.close()
 
