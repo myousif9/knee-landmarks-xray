@@ -24,30 +24,32 @@ from src.data.preprocessing import (
 def load_model(checkpoint_path: str, device: str) -> torch.nn.Module:
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model_name = checkpoint["model_name"]
-    model = build_model(model_name).to(device)
+    architecture = checkpoint.get("architecture", "unet++")
+    model = build_model(model_name, architecture=architecture).to(device)
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
     return model
 
 
 # build model
-def build_model(model_name: str) -> torch.nn.Module:
-    if model_name == "unet_resnet34":
-        return smp.Unet(
-            encoder_name="resnet34",
-            encoder_weights="imagenet",
-            in_channels=1,
-            classes=1,
-        )
-    elif model_name == "unet_resnet50":
-        return smp.Unet(
-            encoder_name="resnet50",
-            encoder_weights="imagenet",
-            in_channels=1,
-            classes=1,
-        )
+def build_model(model_name: str, architecture: str = "unet") -> torch.nn.Module:
+
+    encoders = {"unet_resnet34": "resnet34", "unet_resnet50": "resnet50"}
+
+    if model_name not in encoders:
+        raise ValueError(f"Unknown model_name {model_name}")
+
+    encoder = encoders[model_name]
+    kwargs = dict(
+        encoder_name=encoder, encoder_weights="imagenet", in_channels=1, classes=1
+    )
+
+    if architecture == "unet":
+        return smp.Unet(**kwargs)
+    elif architecture == "unet++":
+        return smp.UnetPlusPlus(**kwargs)
     else:
-        raise ValueError(f"Unknown model {model_name}")
+        raise ValueError(f"Unknown architecture {architecture}")
 
 
 # Preprocess Dicom Manually

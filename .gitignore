@@ -213,3 +213,5 @@ figures/
 experiments/
 /data/
 cache/
+notebooks/
+*.ipynb

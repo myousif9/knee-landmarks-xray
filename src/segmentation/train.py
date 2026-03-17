@@ -194,6 +194,7 @@ def train(
                 {
                     "model_state": model.state_dict(),
                     "model_name": model_name,
+                    "architecture": architecture,
                     "epoch": epoch,
                     "val_dice": val_dice,
                 },
