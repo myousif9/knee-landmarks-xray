@@ -99,12 +99,28 @@ def run_inference(model: torch.nn.Module, img: torch.Tensor, device: str) -> np.
     return pred.squeeze().cpu().numpy().astype(np.uint8)
 
 
+def smooth(binary: np.ndarray):
+    binary = ndimage.binary_fill_holes(binary).astype(np.uint8)
+    binary = ndimage.binary_closing(binary, iterations=2).astype(np.uint8)
+    return binary.astype(np.uint8)
+
+
+def connected_component_filter(binary: np.ndarray):
+    labeled, num_features = ndimage.label(binary)
+
+    if num_features > 1:
+        sizes = ndimage.sum(binary, labeled, range(1, num_features + 1))
+        binary = (labeled == np.argmax(sizes) + 1).astype(np.uint8)
+
+    return binary
+
+
 # Reverse resize back to original dimensions
 def postprocess(
-    mask: np.uint8,
+    mask: np.ndarray,
     metadata: dict,
     flipped: bool,
-    smooth: bool = False,
+    apply_smooth: bool = False,
 ) -> np.ndarray:
 
     resize = ResizeTransform()
@@ -115,20 +131,15 @@ def postprocess(
     binary = (mask > 0.5).astype(np.uint8)
 
     # keep largest connected component
-    if smooth:
-        labeled, num_features = ndimage.label(binary)
-        if num_features > 1:
-            sizes = ndimage.sum(binary, labeled, range(1, num_features + 1))
-            binary = (labeled == np.argmax(sizes) + 1).astype(np.uint8)
-
-        binary = ndimage.binary_fill_holes(binary).astype(np.uint8)
-        binary = ndimage.binary_closing(binary, iterations=2).astype(np.uint8)
+    if apply_smooth:
+        binary = connected_component_filter(binary)
+        binary = smooth(binary)
 
     return binary
 
 
 # Save segmentation to output dir as .nrrd
-def save_nrrd(mask: np.uint8, dcm_path: str, out_path: str):
+def save_nrrd(mask: np.ndarray, dcm_path: str, out_path: str):
 
     mask_3d = mask[np.newaxis, ...]
     sitk_img = sitk.GetImageFromArray(mask_3d)
