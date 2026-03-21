@@ -1,13 +1,12 @@
 import numpy as np
 from scipy import ndimage
-from scipy.ndimage import binary_dilation, binary_closing, binary_erosion
+from scipy.ndimage import binary_dilation, binary_erosion
 from sklearn.decomposition import PCA
 from skimage.measure import find_contours
 import matplotlib.pyplot as plt
 
 from dataclasses import dataclass
 from typing import Literal
-
 
 _mode = Literal["or", "replace"]
 
@@ -19,16 +18,6 @@ class BoundaryConditions:
     anterior: np.ndarray
     posterior: np.ndarray
     mask: np.ndarray
-
-    def dilate(self, iterations=2):
-        return BoundaryConditions(
-            superior=binary_dilation(self.superior, iterations=iterations) & self.mask,
-            inferior=binary_dilation(self.inferior, iterations=iterations) & self.mask,
-            anterior=binary_dilation(self.anterior, iterations=iterations) & self.mask,
-            posterior=binary_dilation(self.posterior, iterations=iterations)
-            & self.mask,
-            mask=self.mask,
-        )
 
     def dilate_and_clean(self, iterations=2):
         return BoundaryConditions(
@@ -44,39 +33,6 @@ class BoundaryConditions:
             posterior=largest_component(
                 binary_dilation(self.posterior, iterations=iterations) & self.mask
             ),
-            mask=self.mask,
-        )
-
-    def close(self):
-        return BoundaryConditions(
-            superior=binary_closing(self.superior) & self.mask,
-            inferior=binary_closing(self.inferior) & self.mask,
-            anterior=binary_closing(self.anterior) & self.mask,
-            posterior=binary_closing(self.posterior) & self.mask,
-            mask=self.mask,
-        )
-
-    def apply_spatial_filter(self, pc1, pc2, centroid):
-        all_y, all_x = np.where(self.mask)
-        coords = np.stack([all_y, all_x], axis=1)
-        proj_pc1 = (coords - centroid) @ pc1
-        proj_pc2 = (coords - centroid) @ pc2
-
-        upper = np.zeros_like(self.mask)
-        lower = np.zeros_like(self.mask)
-        ant = np.zeros_like(self.mask)
-        post = np.zeros_like(self.mask)
-
-        upper[all_y[proj_pc1 > 0], all_x[proj_pc1 > 0]] = True
-        lower[all_y[proj_pc1 <= 0], all_x[proj_pc1 <= 0]] = True
-        ant[all_y[proj_pc2 > 0], all_x[proj_pc2 > 0]] = True
-        post[all_y[proj_pc2 <= 0], all_x[proj_pc2 <= 0]] = True
-
-        return BoundaryConditions(
-            superior=self.superior & upper,
-            inferior=self.inferior & lower,
-            anterior=self.anterior & ant,
-            posterior=self.posterior & post,
             mask=self.mask,
         )
 
@@ -222,16 +178,6 @@ class BoundaryConditions:
             mask=self.mask,
         )
 
-    def to_eikonal_imgs(self, dilation_iterations=2):
-        bc = self.dilate(dilation_iterations)
-
-        return {
-            "superior": bc.superior,
-            "inferior": bc.inferior,
-            "anterior": bc.anterior,
-            "posterior": bc.posterior,
-        }
-
 
 _ORIENTATION = Literal["left", "right"]
 
@@ -290,15 +236,6 @@ def largest_component(binary_img: np.ndarray) -> np.ndarray:
         return binary_img
     sizes = ndimage.sum(binary_img, labeled, range(1, n + 1))
     return labeled == (np.argmax(sizes) + 1)
-
-
-def largest_n_components(binary_img, n=2):
-    labeled, num = ndimage.label(binary_img)
-    if num <= n:
-        return binary_img
-    sizes = ndimage.sum(binary_img, labeled, range(1, num + 1))
-    top_n = np.argsort(sizes)[-n:] + 1
-    return np.isin(labeled, top_n)
 
 
 def compute_boundary_conditions(mask, pc1, pc2, centroid, threshold=0.8, debug=False):
