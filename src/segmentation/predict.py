@@ -120,7 +120,7 @@ def postprocess(
     mask: np.ndarray,
     metadata: dict,
     flipped: bool,
-    apply_smooth: bool = False,
+    apply_smooth: bool = True,
 ) -> np.ndarray:
 
     resize = ResizeTransform()
@@ -128,7 +128,9 @@ def postprocess(
     if flipped:
         mask = np.fliplr(mask)
 
-    binary = (mask > 0.5).astype(np.uint8)
+    binary = (ndimage.gaussian_filter(mask.astype(float), sigma=5) > 0.5).astype(
+        np.uint8
+    )
 
     # keep largest connected component
     if apply_smooth:
@@ -158,12 +160,12 @@ def predict(
     dcm_path: str,
     laterality: str,
     device: str,
-    smooth: bool = False,
+    smooth: bool = True,
 ) -> np.ndarray:
     img, metadata, flipped = preprocess(dcm_path, laterality)
     mask = run_inference(model, img, device)
 
-    return postprocess(mask, metadata, flipped, smooth=smooth)
+    return postprocess(mask, metadata, flipped, apply_smooth=smooth)
 
 
 def predict_batch(
@@ -171,7 +173,7 @@ def predict_batch(
     csv_path: str,
     data_dir: str,
     output_dir: str,
-    smooth: bool = False,
+    smooth: bool = True,
     device: str = None,
 ):
     if device is None:
@@ -200,7 +202,7 @@ def main():
     parser.add_argument("--data_dir", required=True)
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--device", default=None)
-    parser.add_argument("--smooth", action="store_true", default=False)
+    parser.add_argument("--smooth", action="store_true", default=True)
 
     args = parser.parse_args()
 

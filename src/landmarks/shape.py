@@ -346,27 +346,36 @@ def process_boundary_conditions(
     centroid,
     threshold=0.8,
     border_distance=50,
-    inferior_band_fraction=0.25,
+    inferior_band_fraction=0.15,
     dilation_iterations=2,
 ) -> BoundaryConditions:
     bc = compute_boundary_conditions(mask, pc1, pc2, centroid, threshold=threshold)
     width = bc.inferior_bone_width(pc1, pc2, centroid)
 
-    inferior_count = bc.inferior.sum()
-    if inferior_count < width * 0.5 or inferior_count > width * 2.0:
-        return (
-            bc.apply_border(distance=border_distance)
-            .apply_inferior_band(pc1, centroid, fraction=inferior_band_fraction)
-            .dilate_and_clean(iterations=dilation_iterations)
-            .to_contour(ignore="inferior")
-            .apply_heirarchy()
-            .shrink_mask()
-        )
-    else:
-        return (
-            bc.apply_border(distance=border_distance, mode="or")
-            .dilate_and_clean(iterations=dilation_iterations)
-            .to_contour(ignore="inferior")
-            .apply_heirarchy()
-            .shrink_mask()
-        )
+    return (
+        bc.apply_border(distance=border_distance)
+        .apply_inferior_band(pc1, centroid, fraction=inferior_band_fraction)
+        .dilate_and_clean(iterations=dilation_iterations)
+        .to_contour(ignore="inferior")
+        .apply_heirarchy()
+        .shrink_mask()
+    )
+
+    # inferior_count = bc.inferior.sum()
+    # if inferior_count < width * 0.5 or inferior_count > width * 2.0:
+    #     return (
+    #         bc.apply_border(distance=border_distance)
+    #         .apply_inferior_band(pc1, centroid, fraction=inferior_band_fraction)
+    #         .dilate_and_clean(iterations=dilation_iterations)
+    #         .to_contour(ignore="inferior")
+    #         .apply_heirarchy()
+    #         .shrink_mask()
+    #     )
+    # else:
+    #     return (
+    #         bc.apply_border(distance=border_distance, mode="or")
+    #         .dilate_and_clean(iterations=dilation_iterations)
+    #         .to_contour(ignore="inferior")
+    #         .apply_heirarchy()
+    #         .shrink_mask()
+    #     )
