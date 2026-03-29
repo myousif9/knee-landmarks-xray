@@ -14,6 +14,28 @@ from .preprocessing import (
 
 
 class KneeDataset(Dataset):
+    """PyTorch Dataset for knee DICOM images with optional segmentation masks.
+
+    Applies the standard preprocessing pipeline (MONOCHROME1 inversion, horizontal
+    flip for right-laterality, burned-in text removal, intensity clipping, z-score
+    normalisation, resize and pad to square) and optionally caches processed arrays
+    to disk as .npz files to avoid reprocessing on subsequent epochs.
+
+    Args:
+        image_paths (list[str]): Paths to DICOM image files.
+        mask_paths (list[str] | None, optional): Paths to NRRD segmentation mask files.
+            If None, masks are not loaded and the second return value of __getitem__
+            is None. Defaults to None.
+        laterality (list[str] | None, optional): Per-image laterality labels (``"L"``
+            or ``"R"``). Right images are flipped horizontally. Defaults to None.
+        transform (albumentations.Compose | None, optional): Albumentations augmentation
+            pipeline applied to image and mask jointly. Defaults to None.
+        cache_dir (str | None, optional): Directory to cache preprocessed .npz files.
+            If None, caching is disabled. Defaults to None.
+        target_size (int, optional): Side length of the output square in pixels.
+            Defaults to 512.
+    """
+
     def __init__(
         self,
         image_paths,
@@ -31,6 +53,13 @@ class KneeDataset(Dataset):
         self.transform = transform
         self.cache_dir = cache_dir
 
+        if self.laterality is not None:
+            for lat in self.laterality:
+                if lat.strip().upper() not in ("L", "R"):
+                    raise ValueError(
+                        f"Invalid laterality '{lat}'. Expected 'L' or 'R'."
+                    )
+
         if cache_dir is not None:
             os.makedirs(cache_dir, exist_ok=True)
 
@@ -42,6 +71,20 @@ class KneeDataset(Dataset):
         return os.path.join(self.cache_dir, f"{stem}.npz")
 
     def __getitem__(self, index):
+        """Load, preprocess and return a single sample.
+
+        Serves cached .npz arrays if available, otherwise runs the full
+        preprocessing pipeline and writes to cache.
+
+        Args:
+            index (int): Dataset index.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor | None, bool]: Preprocessed image tensor
+                of shape (1, H, W), mask tensor of shape (1, H, W) or None if no masks
+                were provided, and a flag indicating whether the image was flipped.
+        """
+
         flipped = (
             self.laterality is not None
             and self.laterality[index].strip().upper() == "R"
@@ -75,7 +118,10 @@ class KneeDataset(Dataset):
         img = ds.pixel_array.astype(np.float32)
 
         # Fix Monochrome 1 (invert image)
-        if ds.PhotometricInterpretation.lower() == "monochrome1":
+        if (
+            getattr(ds, "PhotometricInterpretation", "").lower().replace(" ", "")
+            == "monochrome1"
+        ):
             img = invert_img(img)
 
         if flipped:

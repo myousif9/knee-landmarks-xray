@@ -1,5 +1,7 @@
 import torch
-from src.segmentation.predict import load_model, predict
+from src.utils import laterality_to_orientation, orientation_to_laterality
+from src.segmentation.model import load_model
+from src.segmentation.predict import predict
 from src.landmarks.pipeline import run_pipeline
 
 import os
@@ -22,6 +24,20 @@ def run(
     pts_method: _pts_method = "medial",
     device=None,
 ):
+    """Run segmentation and shape analysis on a single DICOM file.
+
+    Args:
+        model_path (str): Path to the model checkpoint file.
+        dcm_path (str): Path to the DICOM file.
+        orientation (_orientation): Laterality of the bone — ``"left"`` or ``"right"``.
+        pts_method (_pts_method, optional): Shaft region selection method for PTS.
+            Defaults to ``"medial"``.
+        device (str | None, optional): Inference device. Auto-detected if None.
+
+    Returns:
+        LandmarkResult: PCA axes, boundary conditions, eikonal maps, and PTS result.
+    """
+
     if device is None:
         device = (
             "cuda"
@@ -29,10 +45,10 @@ def run(
             else "mps" if torch.backends.mps.is_available() else "cpu"
         )
 
-    laterality = "R" if orientation == "right" else "L"
+    laterality = orientation_to_laterality(orientation)
 
     model = load_model(model_path, device)
-    mask = predict(model, dcm_path, laterality, device, smooth=True)
+    mask = predict(model, dcm_path, laterality, device, fill_close=True)
     result = run_pipeline(mask, orientation=orientation, pts_method=pts_method)
     return result
 
@@ -45,6 +61,24 @@ def run_batch(
     device=None,
     save_plot: bool = False,
 ):
+    """Run the full pipeline on a batch of DICOM files listed in a CSV.
+
+    Loads the model once, iterates over each row, appends PTS results to a
+    shared ``results.csv``, and optionally saves per-image plots.
+
+    The CSV must contain ``dicom_path`` and ``laterality`` columns.
+
+    Args:
+        model_path (str): Path to the model checkpoint file.
+        csv_path (str): Path to the CSV file listing images to process.
+        output_dir (str): Directory to write ``results.csv`` and optional plots.
+        pts_method (_pts_method, optional): Shaft region selection method for PTS.
+            Defaults to ``"medial"``.
+        device (str | None, optional): Inference device. Auto-detected if None.
+        save_plot (bool, optional): If True, saves PTS and boundary condition plots
+            as PNG files for each image. Defaults to False.
+    """
+
     df = pd.read_csv(csv_path)
     os.makedirs(output_dir, exist_ok=True)
     csv_out = os.path.join(output_dir, "results.csv")
@@ -60,12 +94,9 @@ def run_batch(
 
     for _, row in tqdm(df.iterrows(), total=len(df)):
         stem = os.path.splitext(os.path.basename(row["dicom_path"]))[0]
-        orientation = (
-            "right" if str(row["laterality"]).strip().upper() == "R" else "left"
-        )
         laterality = row["laterality"]
-
-        mask = predict(model, row["dicom_path"], laterality, device, smooth=True)
+        orientation = laterality_to_orientation(laterality)
+        mask = predict(model, row["dicom_path"], laterality, device, fill_close=True)
         result = run_pipeline(mask, orientation=orientation, pts_method=pts_method)
 
         if save_plot:
@@ -77,7 +108,7 @@ def run_batch(
                 bbox_inches="tight",
             )
 
-            fig, ax = result.bc.plot_all()
+            fig, axes = result.bc.plot_all()
             fig.savefig(
                 os.path.join(output_dir, f"{stem}_bc.png"), dpi=150, bbox_inches="tight"
             )
@@ -96,17 +127,34 @@ def run_batch(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Knee PTS pipeline")
-    parser.add_argument("--model", required=True, help="Path to model checkpoint")
-    parser.add_argument("--dicom", required=True, help="Path to DICOM file")
-    parser.add_argument("--orientation", choices=["left", "right"], required=True)
-    parser.add_argument("--device", default=None)
-    parser.add_argument("--output_dir", default=None, help="Directory to save outputs")
+    parser = argparse.ArgumentParser(
+        description="Run the knee PTS pipeline on a single DICOM file."
+    )
+    parser.add_argument("--model", required=True, help="Path to model checkpoint file.")
+    parser.add_argument("--dicom", required=True, help="Path to DICOM file.")
+    parser.add_argument(
+        "--orientation",
+        choices=["left", "right"],
+        required=True,
+        help="Laterality of the bone.",
+    )
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="Inference device (e.g. 'cuda', 'mps', 'cpu'). Auto-detected if not set.",
+    )
+    parser.add_argument(
+        "--output_dir",
+        default=None,
+        help="Directory to save PTS plot, boundary condition plot, and results CSV. Optional.",
+    )
     parser.add_argument(
         "--pts_method",
         choices=["medial", "lateral", "posterior_cortex"],
         default="medial",
+        help="Shaft region selection method for PTS computation. Default: medial.",
     )
+
     args = parser.parse_args()
 
     result = run(

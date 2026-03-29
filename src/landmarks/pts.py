@@ -9,13 +9,26 @@ _method = Literal["medial", "lateral", "posterior_cortex"]
 
 
 def _angle_between(v1: np.ndarray, v2: np.ndarray) -> float:
-
     cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
     return float(np.degrees(np.arccos(np.clip(np.abs(cos_angle), 0, 1))))
 
 
 @dataclass
 class PTSResult:
+    """Result of a posterior tibial slope (PTS) measurement.
+
+    Attributes:
+        angle (float): Measured PTS angle in degrees.
+        shaft_coeffs (np.ndarray): Polynomial coefficients (degree 1) of the shaft axis
+            line fit — ``x = shaft_coeffs[0] * y + shaft_coeffs[1]``.
+        plateau_coeffs (np.ndarray): Polynomial coefficients (degree 1) of the tibial
+            plateau line fit — ``y = plateau_coeffs[0] * x + plateau_coeffs[1]``.
+        shaft_pts (np.ndarray): Array of shape (N, 2) of (y, x) pixels used to fit the shaft axis.
+        plateau_pts (np.ndarray): Array of shape (M, 2) of (y, x) pixels used to fit the plateau line.
+        method: PTS method used — ``"medial"``, ``"lateral"``, or ``"posterior_cortex"``.
+        mask (np.ndarray): Binary bone mask used as the plot background.
+    """
+
     angle: float
     shaft_coeffs: np.ndarray
     plateau_coeffs: np.ndarray
@@ -25,13 +38,25 @@ class PTSResult:
     mask: np.ndarray
 
     def plot(self, ax=None):
+        """Plot the PTS measurement overlaid on the bone mask.
+
+        Draws three lines:
+        - Shaft axis (blue) — from plateau level to the inferior shaft.
+        - Plateau line (red) — spanning the full bone width.
+        - Shaft normal (green dashed) — perpendicular to the shaft at plateau level,
+        showing the reference line from which the PTS angle is measured.
+
+        Args:
+            ax (matplotlib.axes.Axes, optional): Axes to plot on. If None, a new figure is created.
+
+        Returns:
+            matplotlib.axes.Axes: Axes with the plot.
+        """
 
         if ax is None:
             _, ax = plt.subplots(figsize=(6, 10))
 
-        # plat_x = self.plateau_pts[:, 1]
         plat_y = self.plateau_pts[:, 0]
-        # x_range = np.linspace(plat_x.min(), plat_x.max(), 100)
         bone_x = np.where(self.mask)[1]
         x_range = np.linspace(bone_x.min(), bone_x.max(), 100)
         plat_line = np.poly1d(self.plateau_coeffs)
@@ -64,6 +89,28 @@ class PTSResult:
 def compute_pts(
     em: EikonalMaps, bc: BoundaryConditions, method: _method = "medial"
 ) -> PTSResult:
+    """Compute the posterior tibial slope (PTS) angle from eikonal coordinate maps.
+
+    Selects shaft pixels using eikonal coordinates, fits a line to define the
+    tibial shaft axis, then fits a second line to the superior boundary pixels
+    to define the plateau. The PTS angle is the deviation of the plateau from
+    perpendicular to the shaft.
+
+    Shaft region definitions by method:
+    - ``"medial"``: pixels near the AP midline (t_ap ≈ 0.5), mid-shaft (t_si 0.6–0.9).
+    - ``"lateral"``: pixels near the anterior cortex (t_ap < 0.15), mid-shaft.
+    - ``"posterior_cortex"``: pixels near the posterior cortex (t_ap > 0.85), mid-shaft.
+
+    Args:
+        em (EikonalMaps): Eikonal coordinate maps for the bone.
+        bc (BoundaryConditions): Boundary conditions providing the superior boundary
+            pixels for the plateau line fit.
+        method (_method, optional): Shaft region selection method. Defaults to ``"medial"``.
+
+    Returns:
+        PTSResult: Measured angle, line coefficients, source points, and bone mask.
+    """
+
     t_si = em.t_si
     t_ap = em.t_ap
     mask = em.mask
@@ -76,6 +123,8 @@ def compute_pts(
         shaft_mask = (t_ap < 0.15) & (t_si > 0.6) & (t_si < 0.9) & mask
     elif method == "posterior_cortex":
         shaft_mask = (t_ap > 0.85) & (t_si > 0.6) & (t_si < 0.9) & mask
+    else:
+        raise ValueError(f"Unknown method '{method}'.")
 
     shaft_pts = np.argwhere(shaft_mask)
     shaft_coeffs = np.polyfit(shaft_pts[:, 0], shaft_pts[:, 1], 1)

@@ -6,38 +6,32 @@ from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split
-import segmentation_models_pytorch as smp
+
 from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric
-from src.data.dataset import KneeDataset
 from tqdm import tqdm
 import albumentations as A
 
 import argparse
 
-
-# model
-def build_model(model_name: str, architecture: str = "unet") -> torch.nn.Module:
-
-    encoders = {"unet_resnet34": "resnet34", "unet_resnet50": "resnet50"}
-
-    if model_name not in encoders:
-        raise ValueError(f"Unknown model_name {model_name}")
-
-    encoder = encoders[model_name]
-    kwargs = dict(
-        encoder_name=encoder, encoder_weights="imagenet", in_channels=1, classes=1
-    )
-
-    if architecture == "unet":
-        return smp.Unet(**kwargs)
-    elif architecture == "unet++":
-        return smp.UnetPlusPlus(**kwargs)
-    else:
-        raise ValueError(f"Unknown architecture {architecture}")
+from src.data.dataset import KneeDataset
+from src.segmentation.model import build_model
 
 
 def boundary_loss(pred, target):
+    """Compute boundary-weighted binary cross-entropy loss.
+
+    Detects mask boundaries using a Laplacian filter, then computes BCE
+    between the predicted logits and the boundary map. Encourages the model
+    to focus on accurately delineating edges rather than just filling the mask interior.
+
+    Args:
+        pred (torch.Tensor): Raw logit predictions of shape (B, 1, H, W).
+        target (torch.Tensor): Binary segmentation masks of shape (B, 1, H, W).
+
+    Returns:
+        torch.Tensor: Scalar boundary loss.
+    """
 
     laplacian = (
         torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32)
@@ -61,6 +55,30 @@ def train(
     boundary_loss_weight: float = 0.0,
     early_stopping_patience: int = 20,
 ):
+    """Train a tibia segmentation model and save checkpoints.
+
+    Loads segmented images from the MRKR dataset metadata CSV, applies an
+    80/20 train/val split, and trains with BCE + optional boundary loss.
+    Saves the best checkpoint by validation loss and applies early stopping.
+    TensorBoard logs are written to ``checkpoint_dir/logs``.
+
+    Args:
+        data_path (str): Root directory of the dataset.
+        cache_dir (str): Directory for caching preprocessed images.
+        checkpoint_dir (str): Directory to save model checkpoints and logs.
+        model_name (str, optional): Encoder identifier. Defaults to ``"unet_resnet34"``.
+        architecture (str, optional): Decoder architecture — ``"unet"`` or ``"unet++"``.
+            Defaults to ``"unet"``.
+        version (str, optional): Version tag appended to the checkpoint filename.
+            Defaults to ``"v1"``.
+        epochs (int, optional): Maximum number of training epochs. Defaults to 200.
+        batch_size (int, optional): Training batch size. Defaults to 16.
+        lr (float, optional): Initial learning rate. Defaults to 0.001.
+        boundary_loss_weight (float, optional): Weight of the boundary loss term.
+            Set to 0 to use BCE only. Defaults to 0.0.
+        early_stopping_patience (int, optional): Number of epochs without validation
+            improvement before stopping. Defaults to 20.
+    """
 
     writer = SummaryWriter(log_dir=os.path.join(checkpoint_dir, "logs"))
 
@@ -143,6 +161,7 @@ def train(
     scaler = GradScaler()
 
     best_val_dice = 0.0
+    early_stopping_counter = 0
 
     for epoch in range(epochs):
         print(f"EPOCH: {epoch + 1}")
@@ -188,7 +207,6 @@ def train(
 
         if val_dice > best_val_dice:
             best_val_dice = val_dice
-            early_stopping_counter = 0
             os.makedirs(checkpoint_dir, exist_ok=True)
             torch.save(
                 {
@@ -212,16 +230,54 @@ def train(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_path", required=True)
-    parser.add_argument("--cache_dir", required=True)
-    parser.add_argument("--checkpoint_dir", required=True)
-    parser.add_argument("--architecture", default="unet")
-    parser.add_argument("--model_name", default="unet_resnet34")
-    parser.add_argument("--version", default="v1")
-    parser.add_argument("--epochs", type=int, default=200)
-    parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--boundary_loss_weight", type=float, default=0.0)
+    parser.add_argument(
+        "--cache_dir", required=True, help="Directory for caching preprocessed images."
+    )
+    parser.add_argument(
+        "--checkpoint_dir",
+        required=True,
+        help="Directory to save checkpoints and TensorBoard logs.",
+    )
+    parser.add_argument(
+        "--architecture",
+        default="unet",
+        help="Decoder architecture: 'unet' or 'unet++'. Default: unet.",
+    )
+    parser.add_argument(
+        "--model_name",
+        default="unet_resnet34",
+        help="Encoder identifier. Default: unet_resnet34.",
+    )
+    parser.add_argument(
+        "--version",
+        default="v1",
+        help="Version tag appended to the checkpoint filename. Default: v1.",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=200,
+        help="Maximum number of training epochs. Default: 200.",
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=16, help="Training batch size. Default: 16."
+    )
+    parser.add_argument(
+        "--lr", type=float, default=0.001, help="Initial learning rate. Default: 0.001."
+    )
+    parser.add_argument(
+        "--boundary_loss_weight",
+        type=float,
+        default=0.0,
+        help="Weight of boundary loss term. 0 disables it. Default: 0.0.",
+    )
+    parser.add_argument(
+        "--early_stopping_patience",
+        type=int,
+        default=20,
+        help="Epochs without val improvement before stopping. Default: 20.",
+    )
+
     args = parser.parse_args()
 
     train(**vars(args))
