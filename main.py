@@ -3,6 +3,7 @@ from src.utils import laterality_to_orientation, orientation_to_laterality
 from src.segmentation.model import load_model
 from src.segmentation.predict import predict
 from src.landmarks.pipeline import run_pipeline
+from src.landmarks.qc import compute_qc
 
 import os
 import pandas as pd
@@ -82,6 +83,7 @@ def run_batch(
     df = pd.read_csv(csv_path)
     os.makedirs(output_dir, exist_ok=True)
     csv_out = os.path.join(output_dir, "results.csv")
+    qc_out = os.path.join(output_dir, "qc.csv")
 
     if device is None:
         device = (
@@ -98,6 +100,7 @@ def run_batch(
         orientation = laterality_to_orientation(laterality)
         mask = predict(model, row["dicom_path"], laterality, device, fill_close=True)
         result = run_pipeline(mask, orientation=orientation, pts_method=pts_method)
+        qc = compute_qc(result)
 
         if save_plot:
             fig, ax = plt.subplots(figsize=(6, 10))
@@ -107,6 +110,7 @@ def run_batch(
                 dpi=150,
                 bbox_inches="tight",
             )
+            plt.close(fig)
 
             fig, axes = result.bc.plot_all()
             fig.savefig(
@@ -124,6 +128,15 @@ def run_batch(
                 }
             ]
         ).to_csv(csv_out, mode="a", header=not os.path.exists(csv_out), index=False)
+
+        pd.DataFrame(
+            [
+                {
+                    "dicom": row["dicom_path"],
+                    **qc.to_dict(),
+                }
+            ]
+        ).to_csv(qc_out, mode="a", header=not os.path.exists(qc_out), index=False)
 
 
 def main():

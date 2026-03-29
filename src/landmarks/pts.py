@@ -37,17 +37,21 @@ class PTSResult:
     method: _method
     mask: np.ndarray
 
-    def plot(self, ax=None):
-        """Plot the PTS measurement overlaid on the bone mask.
+    def plot(self, ax=None, image=None):
+        """Plot the PTS measurement overlaid on the bone mask or a raw image.
 
-        Draws three lines:
+        Draws three lines and the source point clouds:
         - Shaft axis (blue) — from plateau level to the inferior shaft.
         - Plateau line (red) — spanning the full bone width.
-        - Shaft normal (green dashed) — perpendicular to the shaft at plateau level,
-        showing the reference line from which the PTS angle is measured.
+        - Shaft normal (green dashed) — perpendicular to the shaft at plateau level.
+        - Shaft points (blue scatter) and plateau points (red scatter).
+        - Intersection point (white dot) at plateau level on the shaft axis.
 
         Args:
-            ax (matplotlib.axes.Axes, optional): Axes to plot on. If None, a new figure is created.
+            ax (matplotlib.axes.Axes, optional): Axes to plot on. If None, a new
+                figure is created.
+            image (np.ndarray, optional): Raw image array to use as background.
+                If None, the binary bone mask is used.
 
         Returns:
             matplotlib.axes.Axes: Axes with the plot.
@@ -64,25 +68,42 @@ class PTSResult:
         y_range = np.linspace(plat_y.mean(), self.shaft_pts[:, 0].max(), 100)
         shaft_line = np.poly1d(self.shaft_coeffs)
 
-        # perpendicular to shaft at plateau level
-
         shaft_slope = self.shaft_coeffs[0]
-
         y_intersect = plat_y.mean()
         x_intersect = shaft_line(y_intersect)
 
-        # perpendicular direction: rotate shaft direction 90 degrees
         perp_slope = -1.0 / shaft_slope if shaft_slope != 0 else np.inf
         perp_line = np.poly1d([perp_slope, x_intersect - perp_slope * y_intersect])
-
         perp_y = np.linspace(y_intersect - 100, y_intersect + 100, 100)
 
-        ax.imshow(self.mask, cmap="gray")
+        bg = image if image is not None else self.mask
+        # cmap = "gray" if image is None else None
+        ax.imshow(bg, cmap="gray")
+
+        ax.scatter(
+            self.shaft_pts[:, 1],
+            self.shaft_pts[:, 0],
+            s=1,
+            c="cyan",
+            alpha=0.4,
+            label="shaft pts",
+        )
+        ax.scatter(
+            self.plateau_pts[:, 1],
+            self.plateau_pts[:, 0],
+            s=1,
+            c="orange",
+            alpha=0.4,
+            label="plateau pts",
+        )
+
         ax.plot(shaft_line(y_range), y_range, "b-", lw=2, label="shaft axis")
         ax.plot(x_range, plat_line(x_range), "r-", lw=2, label="plateau")
         ax.plot(perp_line(perp_y), perp_y, "g--", lw=2, label="shaft normal")
-        ax.set_title(f"PTS ({self.method}): {self.angle:.2f} degrees")
-        ax.legend()
+        ax.plot(x_intersect, y_intersect, "wo", ms=6)
+
+        ax.set_title(f"PTS ({self.method}): {self.angle:.2f}°")
+        ax.legend(markerscale=5)
         return ax
 
 

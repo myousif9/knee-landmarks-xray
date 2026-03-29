@@ -35,7 +35,7 @@ def orientation_to_laterality(orientation: _orientation) -> str:
     Returns:
         str: ``"L"`` for ``"left"``, ``"R"`` for ``"right"``.
     """
-    oreintation = oreintation.strip().lower()
+    orientation = orientation.strip().lower()
 
     if orientation == "left":
         return "L"
