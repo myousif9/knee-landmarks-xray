@@ -104,6 +104,11 @@ class PTSResult:
 
         ax.set_title(f"PTS ({self.method}): {self.angle:.2f}°")
         ax.legend(markerscale=5)
+
+        h, w = bg.shape[:2]
+        ax.set_xlim(0, w)
+        ax.set_ylim(h, 0)  # inverted — image y goes top to bottom
+
         return ax
 
 
@@ -119,8 +124,8 @@ def compute_pts(
 
     Shaft region definitions by method:
     - ``"medial"``: pixels near the AP midline (t_ap ≈ 0.5), mid-shaft (t_si 0.6–0.9).
-    - ``"lateral"``: pixels near the anterior cortex (t_ap < 0.15), mid-shaft.
-    - ``"posterior_cortex"``: pixels near the posterior cortex (t_ap > 0.85), mid-shaft.
+    - ``"lateral"``: pixels near the anterior cortex (t_ap < 0.10), mid-shaft.
+    - ``"posterior_cortex"``: pixels near the posterior cortex (t_ap > 0.90), mid-shaft.
 
     Args:
         em (EikonalMaps): Eikonal coordinate maps for the bone.
@@ -141,9 +146,9 @@ def compute_pts(
     if method == "medial":
         shaft_mask = (np.abs(t_ap - 0.5) < 0.05) & (t_si > 0.6) & (t_si < 0.9) & mask
     elif method == "lateral":
-        shaft_mask = (t_ap < 0.15) & (t_si > 0.6) & (t_si < 0.9) & mask
+        shaft_mask = (t_ap < 0.10) & (t_si > 0.6) & (t_si < 0.9) & mask
     elif method == "posterior_cortex":
-        shaft_mask = (t_ap > 0.85) & (t_si > 0.6) & (t_si < 0.9) & mask
+        shaft_mask = (t_ap > 0.90) & (t_si > 0.6) & (t_si < 0.9) & mask
     else:
         raise ValueError(f"Unknown method '{method}'.")
 

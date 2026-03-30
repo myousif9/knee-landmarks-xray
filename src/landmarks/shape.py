@@ -182,7 +182,7 @@ class BoundaryConditions:
             mask=self.mask,
         )
 
-    def apply_inferior_band(self, pca: PCAAxes, fraction=0.15) -> BoundaryConditions:
+    def apply_inferior_band(self, pca: PCAAxes, fraction=0.10) -> BoundaryConditions:
         """Union the existing inferior boundary with the bottom fraction of the bone along PC1.
 
         Computes each mask pixel's projection onto PC1, then marks the lowest `fraction`
@@ -192,7 +192,7 @@ class BoundaryConditions:
         Args:
             pca (PCAAxes): PCA axes used to project mask pixels along the superior-inferior axis (PC1).
             fraction (float, optional): Fraction of the total bone height (along PC1) to include in
-                the inferior band. Defaults to 0.15.
+                the inferior band. Defaults to 0.10.
 
         Returns:
             BoundaryConditions: New instance with the inferior boundary expanded by the anatomical band.
@@ -609,7 +609,7 @@ def process_boundary_conditions(
     pca: PCAAxes,
     threshold: float = 0.8,
     border_distance: int = 50,
-    inferior_band_fraction: float = 0.15,
+    inferior_band_fraction: float = 0.10,
     dilation_iterations: int = 2,
 ) -> BoundaryConditions:
     """Run the full boundary condition pipeline from raw mask to eikonal-ready labels.
@@ -626,7 +626,7 @@ def process_boundary_conditions(
         border_distance (int, optional): Pixel width of the image-edge band
             applied as the inferior boundary. Defaults to 50.
         inferior_band_fraction (float, optional): Fraction of bone height along
-            PC1 added to the inferior boundary. Defaults to 0.15.
+            PC1 added to the inferior boundary. Defaults to 0.10.
         dilation_iterations (int, optional): Number of dilation iteration in
             ``dilate_and_clean``. Defaults to 2.
 
