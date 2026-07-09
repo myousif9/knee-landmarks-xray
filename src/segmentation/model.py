@@ -3,7 +3,9 @@ import segmentation_models_pytorch as smp
 
 
 # build model
-def build_model(model_name: str, architecture: str = "unet++") -> torch.nn.Module:
+def build_model(
+    model_name: str, architecture: str = "unet++", classes: int = 1
+) -> torch.nn.Module:
     """Instantiate a segmentation model with ImageNet-pretrained encoder weights.
 
     Args:
@@ -11,6 +13,9 @@ def build_model(model_name: str, architecture: str = "unet++") -> torch.nn.Modul
             ``"unet_resnet34"``, ``"unet_resnet50"``.
         architecture (str, optional): Decoder architecture — ``"unet"`` or ``"unet++"``.
             Defaults to ``"unet++"``.
+        classes (int, optional): Number of output channels/classes. Use ``1`` for
+            binary segmentation and ``N`` for multilabel/multiclass outputs.
+            Defaults to 1.
 
     Raises:
         ValueError: If ``model_name`` or ``architecture`` is not recognised.
@@ -26,7 +31,10 @@ def build_model(model_name: str, architecture: str = "unet++") -> torch.nn.Modul
 
     encoder = encoders[model_name]
     kwargs = dict(
-        encoder_name=encoder, encoder_weights="imagenet", in_channels=1, classes=1
+        encoder_name=encoder,
+        encoder_weights="imagenet",
+        in_channels=1,
+        classes=classes,
     )
 
     if architecture == "unet":
@@ -50,7 +58,10 @@ def load_model(checkpoint_path: str, device: str) -> torch.nn.Module:
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model_name = checkpoint["model_name"]
     architecture = checkpoint.get("architecture", "unet++")
-    model = build_model(model_name, architecture=architecture).to(device)
+    classes = checkpoint.get("classes", 1)
+    model = build_model(model_name, architecture=architecture, classes=classes).to(
+        device
+    )
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
     return model

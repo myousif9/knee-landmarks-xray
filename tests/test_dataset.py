@@ -38,6 +38,23 @@ def mask_paths(tmp_path):
 
 
 @pytest.fixture
+def multilabel_mask_paths(tmp_path):
+    paths = []
+    labels = np.array(["femur", "tibia", "patella", "fibula"])
+    for i in range(3):
+        mask = np.zeros((4, 256, 256), dtype=np.uint8)
+        mask[0, 20:80, 30:90] = 1
+        mask[1, 100:160, 120:180] = 1
+        mask[2, 50:70, 150:170] = 1
+        mask[3, 170:220, 40:70] = 1
+
+        path = tmp_path / f"img_{i}_multilabel.npz"
+        np.savez_compressed(path, mask=mask, labels=labels)
+        paths.append(str(path))
+    return paths
+
+
+@pytest.fixture
 def cache_dir(tmp_path):
     cache_path = str(tmp_path / "cache")
     return cache_path
@@ -73,6 +90,54 @@ def test_output_shape_with_mask(
 
     assert img.shape == (1, 512, 512)
     assert mask.shape == (1, 512, 512)
+
+
+@patch("pydicom.dcmread")
+def test_output_shape_with_multilabel_npz_mask(
+    mock_dcmread, image_paths, multilabel_mask_paths
+):
+    mock_dcmread.return_value = make_mock_dicom()
+
+    ds = KneeDataset(
+        image_paths,
+        mask_paths=multilabel_mask_paths,
+        mask_format="multilabel_npz",
+        target_labels=["femur", "tibia"],
+        target_size=512,
+    )
+    img, mask, _ = ds[0]
+
+    assert img.shape == (1, 512, 512)
+    assert mask.shape == (2, 512, 512)
+    assert mask[0].sum() > 0
+    assert mask[1].sum() > 0
+
+
+@patch("pydicom.dcmread")
+def test_multilabel_npz_missing_target_label_raises(
+    mock_dcmread, image_paths, multilabel_mask_paths
+):
+    mock_dcmread.return_value = make_mock_dicom()
+
+    ds = KneeDataset(
+        image_paths,
+        mask_paths=multilabel_mask_paths,
+        mask_format="multilabel_npz",
+        target_labels=["femur", "meniscus"],
+        target_size=512,
+    )
+
+    with pytest.raises(ValueError, match="Missing labels"):
+        ds[0]
+
+
+def test_multilabel_npz_requires_target_labels(image_paths, multilabel_mask_paths):
+    with pytest.raises(ValueError, match="target_labels is required"):
+        KneeDataset(
+            image_paths,
+            mask_paths=multilabel_mask_paths,
+            mask_format="multilabel_npz",
+        )
 
 
 @patch("pydicom.dcmread")
