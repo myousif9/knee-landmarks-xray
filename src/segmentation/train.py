@@ -1,4 +1,10 @@
 import os
+
+# Colab can export a notebook-only Matplotlib backend that is invalid inside
+# the isolated uv environment when MONAI imports matplotlib. Training is
+# non-interactive, so force a stable headless backend before importing MONAI.
+os.environ["MPLBACKEND"] = "Agg"
+
 import pandas as pd
 import torch
 import torch.nn.functional as F

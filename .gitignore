@@ -215,3 +215,6 @@ experiments/
 cache/
 notebooks/
 *.ipynb
+*.pt
+models/
+/models/

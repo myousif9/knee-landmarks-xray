@@ -74,7 +74,7 @@ def preprocess(dcm_path: str, laterality: str) -> tuple[torch.Tensor, dict, bool
 
 
 def run_inference(model: torch.nn.Module, img: torch.Tensor, device: str) -> np.ndarray:
-    """Run a single forward pass and return a binary segmentation mask.
+    """Run a single forward pass and return binary segmentation masks.
 
     Args:
         model (torch.nn.Module): Segmentation model in eval mode.
@@ -82,7 +82,7 @@ def run_inference(model: torch.nn.Module, img: torch.Tensor, device: str) -> np.
         device (str): Device to run inference on.
 
     Returns:
-        np.ndarray: Binary uint8 mask of shape (H, W) with values 0 or 1.
+        np.ndarray: Binary uint8 masks of shape (C, H, W) with values 0 or 1.
     """
 
     img = img.to(device)  # send image to device
@@ -94,7 +94,7 @@ def run_inference(model: torch.nn.Module, img: torch.Tensor, device: str) -> np.
 
     pred = (torch.sigmoid(pred) > 0.5).float()
 
-    return pred.squeeze().cpu().numpy().astype(np.uint8)
+    return pred.squeeze(0).cpu().numpy().astype(np.uint8)
 
 
 def fill_and_close(binary: np.ndarray):
@@ -136,13 +136,13 @@ def connected_component_filter(binary: np.ndarray) -> np.ndarray:
 
 
 # Reverse resize back to original dimensions
-def postprocess(
+def postprocess_channel(
     mask: np.ndarray,
     metadata: dict,
     flipped: bool,
     apply_fill_close: bool = True,
 ) -> np.ndarray:
-    """Reverse preprocessing and clean up the predicted segmentation mask.
+    """Reverse preprocessing and clean up one predicted segmentation mask.
 
     Reverses the resize transform, un-flips right-laterality images, applies
     Gaussian smoothing to soften inference artefacts, then optionally keeps
@@ -174,6 +174,29 @@ def postprocess(
         binary = fill_and_close(binary)
 
     return binary
+
+
+def postprocess(
+    masks: np.ndarray,
+    metadata: dict,
+    flipped: bool,
+    apply_fill_close: bool = True,
+) -> np.ndarray:
+    """Reverse preprocessing and clean up predicted segmentation masks.
+
+    Supports both legacy 2D binary predictions and multilabel predictions of
+    shape ``(C, H, W)``. Multilabel channels are processed independently so
+    overlapping femur/tibia predictions are preserved.
+    """
+
+    if masks.ndim == 2:
+        return postprocess_channel(masks, metadata, flipped, apply_fill_close)
+
+    processed = [
+        postprocess_channel(mask, metadata, flipped, apply_fill_close)
+        for mask in masks
+    ]
+    return np.stack(processed, axis=0).astype(np.uint8)
 
 
 # Save segmentation to output dir as .nrrd
@@ -219,7 +242,8 @@ def predict(
             morphological fill-and-close during postprocessing. Defaults to True.
 
     Returns:
-        np.ndarray: Binary uint8 segmentation mask in the original image dimensions.
+        np.ndarray: Binary uint8 segmentation masks in the original image dimensions.
+            Multilabel checkpoints return shape ``(C, H, W)``.
     """
 
     img, metadata, flipped = preprocess(dcm_path, laterality)
@@ -261,17 +285,58 @@ def predict_batch(
         )
 
     os.makedirs(output_dir, exist_ok=True)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    target_labels = checkpoint.get("target_labels")
+    classes = int(checkpoint.get("classes", 1))
+    if target_labels is None:
+        target_labels = ["mask"] if classes == 1 else [f"class_{i}" for i in range(classes)]
+
     model = load_model(checkpoint_path, device)
     df = pd.read_csv(csv_path)
+    output_rows = []
 
     for _, row in tqdm(df.iterrows(), total=len(df)):
         dcm_path = os.path.join(data_dir, row["dicom_path"])
-        mask = predict(
+        masks = predict(
             model, dcm_path, row["laterality"], device, fill_close=fill_close
         )
         stem = os.path.splitext(os.path.basename(dcm_path))[0]
-        save_nrrd(mask, dcm_path, os.path.join(output_dir, f"{stem}.nrrd"))
+
+        if masks.ndim == 2:
+            mask_path = os.path.join(output_dir, f"{stem}.nrrd")
+            save_nrrd(masks, dcm_path, mask_path)
+            output_rows.append(
+                {
+                    "dicom_path": dcm_path,
+                    "label": target_labels[0],
+                    "mask_path": mask_path,
+                }
+            )
+        else:
+            npz_path = os.path.join(output_dir, f"{stem}_multilabel.npz")
+            np.savez_compressed(
+                npz_path,
+                mask=masks.astype(np.uint8),
+                labels=np.asarray(target_labels),
+            )
+
+            for label, mask in zip(target_labels, masks):
+                mask_path = os.path.join(output_dir, f"{stem}_{label}.nrrd")
+                save_nrrd(mask, dcm_path, mask_path)
+                output_rows.append(
+                    {
+                        "dicom_path": dcm_path,
+                        "label": label,
+                        "mask_path": mask_path,
+                        "multilabel_npz_path": npz_path,
+                    }
+                )
+
         shutil.copy(dcm_path, os.path.join(output_dir, os.path.basename(dcm_path)))
+
+    pd.DataFrame(output_rows).to_csv(
+        os.path.join(output_dir, "predictions_manifest.csv"), index=False
+    )
 
 
 def main():
